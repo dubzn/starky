@@ -1,0 +1,55 @@
+{
+    "title": "Starky – Starknet Events",
+    "layout_type": "ordered",
+    "widgets": [
+      {
+        "definition": {
+          "type": "timeseries",
+          "title": "Event count over time",
+          "requests": [
+            {
+              "response_format": "timeseries",
+              "queries": [
+                {
+                  "query": "logs(\"app:starky\").index(\"*\").rollup(\"count\")",
+                  "data_source": "logs_query"
+                }
+              ],
+              "display_type": "line"
+            }
+          ]
+        }
+      },
+      {
+        "definition": {
+          "type": "toplist",
+          "title": "Top contracts by events",
+          "requests": [
+            {
+              "queries": [
+                {
+                  "query": "logs(\"app:starky\").index(\"*\").group_by([\"contract\"]).rollup(\"count\")",
+                  "data_source": "logs_query"
+                }
+              ],
+              "formulas": [{ "formula": "query1" }],
+              "response_format": "scalar"
+            }
+          ]
+        }
+      },
+      {
+        "definition": {
+          "type": "log_stream",
+          "title": "Recent events",
+          "logs": {
+            "query": "app:starky",
+            "columns": ["timestamp", "contract_address", "event_name", "tx_hash"],
+            "indexes": ["*"],
+            "storage": "hot"
+          }
+        }
+      }
+    ]
+  }
+  
