@@ -1,0 +1,45 @@
+# Node / TypeScript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs / debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Coverage / testing
+coverage/
+.nyc_output/
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Package artifacts
+*.tgz
+*.zip
+
+# Optional: choose ONE lockfile manager
+# If you use npm, ignore Yarn’s lockfile:
+# yarn.lock
+# If you use Yarn, ignore npm’s lockfile:
+# package-lock.json
+
+# Optional: local scratch/data (safe to use for demos)
+.data/
+.tmp/
+# If you keep a separate local contracts file, ignore it:
+# shared/contracts.local.json
