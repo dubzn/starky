@@ -13,16 +13,11 @@ export const builder = (y: any) =>
       async (argv: any) => {
         const template = {
           title: argv.name,
-          layout_type: "free",
-        
-          // let users filter the board in the UI
+          layout_type: "ordered",
           template_variables: [
-            { name: "contract", prefix: "contract", default: "*" } // note: no "tag:" here
-            // { name: "selector", prefix: "selector", default: "*" } // optional
+            { name: "contract", prefix: "contract", default: "*" }
           ],
-        
           widgets: [
-            // 1) Event count over time
             {
               definition: {
                 type: "timeseries",
@@ -43,11 +38,8 @@ export const builder = (y: any) =>
                     formulas: [{ formula: "q1" }]
                   }
                 ]
-              },
-              layout: { x: 0, y: 0, width: 47, height: 15 }
+              }
             },
-        
-            // 2) Top contracts by events (group by tag facet)
             {
               definition: {
                 type: "toplist",
@@ -64,7 +56,7 @@ export const builder = (y: any) =>
                         compute: { aggregation: "count" },
                         group_by: [
                           {
-                            facet: "tag:contract",    // facet name uses tag:
+                            facet: "tag:contract",
                             limit: 10,
                             sort: { aggregation: "count", order: "desc" }
                           }
@@ -74,25 +66,18 @@ export const builder = (y: any) =>
                     formulas: [{ formula: "q1" }]
                   }
                 ]
-              },
-              layout: { x: 0, y: 17, width: 24, height: 12 } // spaced to avoid overlap
+              }
             },
-        
-            // 3) Recent events for selected contract
             {
               definition: {
                 type: "log_stream",
                 title: "Recent events for contract:$contract",
-                query: "app:starky AND contract:$contract",  // no "tag:"
+                query: "app:starky AND contract:$contract",
                 indexes: ["*"]
-                // columns: ["timestamp","@contract_address","@event_selector","@tx_hash"] // optional
-              },
-              layout: { x: 25, y: 17, width: 22, height: 12 }
+              }
             }
           ]
         };
-        
-        
 
         const res = await ddCreateDashboard(template);
         setActiveBoard(res.id);
