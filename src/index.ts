@@ -5,10 +5,9 @@ import { hideBin } from "yargs/helpers";
 
 yargs(hideBin(process.argv))
   .scriptName("starky")
-  .command(await import("./cmds/board-create.js"))
-  .command(await import("./cmds/board-add-contract.js"))
+  .command(await import("./cmds/board.js")) 
   .command(await import("./cmds/ingest.js"))
+  .strictCommands()
   .demandCommand(1)
-  .strict()
   .help()
   .parse();

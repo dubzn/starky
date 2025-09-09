@@ -14,7 +14,8 @@ npm link
 cp .env.example .env && export $(grep -v '^#' .env | xargs)
 
 ## Usage
-```bash
-starky board create "Starknet Events – MVP"
-starky board <board-id> add contract <contract_address>
-starky ingest
+```bash# 
+starky board create "grinta-mvp"
+
+# edit starky.config.json -> add `contracts` and `excludeEventNames`
+starky ingest --from-block 0

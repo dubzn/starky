@@ -3,13 +3,10 @@
   "version": "0.1.0",
   "private": false,
   "type": "module",
-  "bin": {
-    "starky": "dist/index.js"
-  },
+  "bin": { "starky": "bin/starky.js" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/index.ts",
-    "link:global": "npm link"
+    "postbuild": "chmod +x bin/starky.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

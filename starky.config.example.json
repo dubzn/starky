@@ -1,0 +1,11 @@
+{
+  "activeBoardId": "abc-123",
+  "contracts": [
+    "0x0123...abc",
+    "0x0456...def"
+  ],
+  "excludeEventNames": [
+    "Approval",
+    "Transfer"
+  ]
+}
