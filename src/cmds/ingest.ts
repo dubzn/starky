@@ -1,6 +1,8 @@
 import { makeProvider } from "../lib/starknet.js";
 import { ddSendLogs } from "../lib/datadog.js";
 import { loadConfig } from "../lib/config.js";
+import { EventMapper } from "../lib/event-mapper.js";
+import { ABIFetcher } from "../lib/abi-fetcher.js";
 import { hash } from "starknet";
 
 type DDLog = { message: string; ddtags?: string; [k: string]: any };
@@ -25,6 +27,15 @@ export const handler = async (argv: any) => {
   const contracts = cfg.contracts ?? [];
   const excludeNames = cfg.excludeEventNames ?? [];
   const excludeSelectors = new Set(excludeNames.map((n) => hash.getSelectorFromName(n).toLowerCase()));
+  
+  // Initialize ABI fetcher and event mapper
+  const abiFetcher = new ABIFetcher(provider);
+  const eventMapper = new EventMapper(cfg.contractABIs, abiFetcher, cfg.manualEventMappings);
+  
+  // Auto-load events from contracts
+  if (contracts.length > 0) {
+    await eventMapper.loadEventsFromContracts(contracts);
+  }
 
   // Pretty debug header
   if (argv.verbose) {
@@ -35,6 +46,9 @@ export const handler = async (argv: any) => {
     console.log("• Network:", STARKNET_NETWORK);
     console.log("• Contracts:", contracts.length ? contracts : "(none → provider permitting, chain-wide)");
     console.log("• Excluding event names:", excludeNames);
+    console.log("• Contract ABIs loaded:", cfg.contractABIs?.length || 0);
+    console.log("• Manual event mappings:", cfg.manualEventMappings?.length || 0);
+    console.log("• Known event names:", eventMapper.getKnownEventNames().length);
     console.log("• Chunk size:", STARKY_CHUNK_SIZE);
     console.log("• Interval (ms):", argv["interval-ms"]);
     console.log("🔎 Logs Explorer:", logsLink);
@@ -72,11 +86,10 @@ export const handler = async (argv: any) => {
           cont = resp.continuation_token;
           fetched += events.length;
 
-          if (argv.verbose && cont) {
-            console.log(`📥 page fetched=${events.length} (has more...)`);
-          } else if (argv.verbose) {
+          if (argv.verbose && events.length > 0) {
             const label = addr ? addr.slice(0, 10) + "…" : "(no address filter)";
-            console.log(`📦 fetched ${events.length} events for ${label}`);
+            console.log(`📦 Fetched ${events.length} events for ${label}`);
+            if (cont) console.log(`   → has more pages...`);
           }
 
           const logs: DDLog[] = [];
@@ -85,6 +98,12 @@ export const handler = async (argv: any) => {
             const sel = (e.keys?.[0] ?? "").toLowerCase();
             if (sel && excludeSelectors.has(sel)) continue;
 
+            // Debug: show event processing details (only first event per batch)
+            if (argv.verbose && i === 0 && events.length > 0) {
+              const eventName = eventMapper.getEventNameWithContext(e.keys?.[0] || "", e.from_address || "");
+              console.log(`🎯 Sample event: "${eventName}" (${e.keys?.[0]?.slice(0, 10)}...) from block ${e.block_number}`);
+            }
+
             const tags = [
               "app:starky",
               `network:${STARKNET_NETWORK}`,
@@ -92,29 +111,46 @@ export const handler = async (argv: any) => {
               sel ? `selector:${sel}` : undefined,
             ].filter(Boolean).join(",");
 
+            const eventName = eventMapper.getEventNameWithContext(e.keys?.[0] || "", e.from_address || "");
+            
             logs.push({
               message: "starknet_event",
               service: "starky",
               ddsource: "starknet",
               ddtags: tags,
+              contract: e.from_address,
               contract_address: e.from_address,
-              event_selector: e.keys?.[0],
-              event_name: "unknown",
+              event_selector: e.keys?.[0] || "unknown",
+              event_name: eventName,
               keys: e.keys,
               data: e.data,
               block_number: e.block_number,
               tx_hash: e.transaction_hash,
+              timestamp: new Date().toISOString(),
             });
           }
 
           if (logs.length) {
-            await ddSendLogs(logs, { verbose: argv.verbose, preview: argv.sample, dumpFile: argv.dump as string | undefined });
+            if (argv.verbose) {
+              console.log(`📤 Sending ${logs.length} logs to Datadog`);
+            }
+            
+            // Show sample log structure for debugging
+            if (logs.length > 0 && argv.verbose) {
+              console.log("🔍 Sample log structure:", JSON.stringify(logs[0], null, 2));
+            }
+            await ddSendLogs(logs, { verbose: true, preview: argv.sample, dumpFile: argv.dump as string | undefined });
             sent += logs.length;
           }
         } while (cont);
       }
 
-      if (argv.verbose) console.log(`📈 cycle fetched=${fetched} sent=${sent}`);
+      if (argv.verbose) {
+        console.log(`📈 Cycle summary: fetched ${fetched} events from blockchain, sent ${sent} logs to Datadog`);
+        if (fetched > 0 && sent === 0) {
+          console.log(`⚠️  Warning: fetched events but sent 0 logs (check excludeEventNames filter)`);
+        }
+      }
       // After the first cycle, tail the head
       if (typeof fromBlock === "object") fromBlock = "latest";
       await sleep(Number(argv["interval-ms"]));
