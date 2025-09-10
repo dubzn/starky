@@ -1,125 +1,54 @@
 import { ddCreateDashboard } from "../lib/datadog.js";
 import { loadConfig, saveConfig, setActiveBoard } from "../lib/config.js";
-import { EventMapper } from "../lib/event-mapper.js";
-import { ABIFetcher } from "../lib/abi-fetcher.js";
-import { RpcProvider } from "starknet";
 
 export const command = "board";
 export const describe = "Manage Datadog dashboards";
 
 /**
- * Generate dynamic widgets based on known events from contracts
+ * Generate simple widgets for event monitoring
  */
-async function generateEventWidgets(contracts: string[]): Promise<any[]> {
-  const widgets: any[] = [];
-  
-  if (contracts.length === 0) {
-    return widgets;
-  }
-
-  try {
-    // Initialize event mapper to get known events
-    const provider = new RpcProvider({ nodeUrl: process.env.STARKNET_RPC_URL || "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_8/ZM5uRejFu-dUlLSZ2fXhg" });
-    const abiFetcher = new ABIFetcher(provider);
-    const cfg = loadConfig();
-    const eventMapper = new EventMapper(cfg.contractABIs, abiFetcher, cfg.manualEventMappings);
-    
-    // Load events from contracts
-    await eventMapper.loadEventsFromContracts(contracts);
-    const knownEvents = eventMapper.getKnownEventNames();
-    
-    console.log(`📋 Found ${knownEvents.length} known events across ${contracts.length} contracts`);
-    
-    // Group events by contract for better organization
-    const eventsByContract = new Map<string, string[]>();
-    
-    // For now, we'll create widgets for the most common events we know about
-    const commonEvents = [
-      'PositionUpdated',
-      'PositionFeesCollected', 
-      'PoolInitialized',
-      'ProtocolFeesPaid',
-      'Swapped',
-      'SavedBalance',
-      'LoadedBalance',
-      'FeesAccumulated'
-    ];
-    
-    // Filter to only include events that are actually in our known events
-    const availableEvents = commonEvents.filter(event => 
-      knownEvents.some(known => known.includes(event) || known === event)
-    );
-    
-    for (const contract of contracts) {
-      eventsByContract.set(contract, availableEvents);
-    }
-    
-    // Create widgets for each contract's events
-    for (const [contract, events] of eventsByContract) {
-      const contractShort = contract.slice(0, 10) + "...";
-      
-      // Create event widgets for this contract
-      const contractEventWidgets = [];
-      for (const eventName of events.slice(0, 3)) { // Limit to 3 events per contract
-        contractEventWidgets.push({
-          definition: {
-            type: "log_stream",
-            title: `${eventName} Events`,
-            query: `app:starky AND event_name:${eventName}`,
-            indexes: ["*"],
-            columns: ["timestamp", "event_name", "contract_address", "tx_hash"],
-            sort: {
-              column: "timestamp",
-              order: "desc"
-            }
-          }
-        });
-      }
-      
-      // Add group for this contract
-      widgets.push({
-        definition: {
-          title: `Contract ${contractShort}`,
-          background_color: "vivid_pink",
-          show_title: true,
-          type: "group",
-          layout_type: "ordered",
-          widgets: contractEventWidgets
-        }
-      });
-    }
-    
-    // Add group for unknown events
-    widgets.push({
+function generateSimpleWidgets(): any[] {
+  return [
+    {
       definition: {
-        title: "Unknown Events (by Selector)",
-        background_color: "vivid_orange",
+        title: "Events by Type",
+        background_color: "white",
         show_title: true,
         type: "group",
         layout_type: "ordered",
         widgets: [
           {
             definition: {
-              type: "log_stream",
-              title: "Unknown Events - Grouped by Selector",
-              query: "app:starky AND event_selector:*",
-              indexes: ["*"],
-              columns: ["timestamp", "event_selector", "contract_address", "tx_hash"],
-              sort: {
-                column: "timestamp",
-                order: "desc"
-              }
+              title: "Event Count by Type",
+              type: "toplist",
+              requests: [
+                {
+                  response_format: "scalar",
+                  queries: [
+                    {
+                      data_source: "logs",
+                      name: "q1",
+                      search: { query: "app:starky" },
+                      indexes: ["*"],
+                      compute: { aggregation: "count" },
+                      group_by: [
+                        {
+                          facet: "event_name",
+                          limit: 20,
+                          sort: { aggregation: "count", order: "desc" }
+                        }
+                      ]
+                    }
+                  ],
+                  formulas: [{ formula: "q1" }]
+                }
+              ]
             }
           }
         ]
       }
-    });
-    
-  } catch (error) {
-    console.warn("⚠️ Could not generate dynamic widgets:", error);
-  }
-  
-  return widgets;
+    }
+  ];
 }
 
 export const builder = (y: any) =>
@@ -234,12 +163,12 @@ export const builder = (y: any) =>
           }
         ];
         
-        // Generate dynamic event widgets
-        console.log("🔄 Generating dynamic widgets based on contract ABIs...");
-        const dynamicWidgets = await generateEventWidgets(contracts);
+        // Generate simple event widgets
+        console.log("🔄 Generating simple event widgets...");
+        const simpleWidgets = generateSimpleWidgets();
         
         // Combine all widgets
-        const allWidgets = [...baseWidgets, ...dynamicWidgets];
+        const allWidgets = [...baseWidgets, ...simpleWidgets];
         
         const template = {
           title: argv.name,
@@ -256,7 +185,7 @@ export const builder = (y: any) =>
         console.log(`id: ${res.id}`);
         console.log(`url: ${res.fullUrl}`);
         console.log(`📌 Active board set in starky.config.json`);
-        console.log(`📊 Generated ${allWidgets.length} widgets (${baseWidgets.length} base + ${dynamicWidgets.length} dynamic)`);
+        console.log(`📊 Generated ${allWidgets.length} widgets (${baseWidgets.length} base + ${simpleWidgets.length} simple)`);
       }
     )
     .command(
