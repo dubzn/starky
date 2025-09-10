@@ -8,47 +8,7 @@ export const describe = "Manage Datadog dashboards";
  * Generate simple widgets for event monitoring
  */
 function generateSimpleWidgets(): any[] {
-  return [
-    {
-      definition: {
-        title: "Events by Type",
-        background_color: "white",
-        show_title: true,
-        type: "group",
-        layout_type: "ordered",
-        widgets: [
-          {
-            definition: {
-              title: "Event Count by Type",
-              type: "toplist",
-              requests: [
-                {
-                  response_format: "scalar",
-                  queries: [
-                    {
-                      data_source: "logs",
-                      name: "q1",
-                      search: { query: "app:starky" },
-                      indexes: ["*"],
-                      compute: { aggregation: "count" },
-                      group_by: [
-                        {
-                          facet: "event_name",
-                          limit: 20,
-                          sort: { aggregation: "count", order: "desc" }
-                        }
-                      ]
-                    }
-                  ],
-                  formulas: [{ formula: "q1" }]
-                }
-              ]
-            }
-          }
-        ]
-      }
-    }
-  ];
+  return [];
 }
 
 export const builder = (y: any) =>
@@ -104,60 +64,186 @@ export const builder = (y: any) =>
           },
           {
             definition: {
-              title: "Overview",
-              background_color: "white",
+              title: "Contract calls",
+              background_color: "vivid_blue",
               show_title: true,
               type: "group",
               layout_type: "ordered",
               widgets: [
                 {
                   definition: {
-                    "title": "Total Events",
-                    "type": "query_value",
-                    "requests": [
+                    type: "note",
+                    content: "Contract call monitoring will be added here in future updates.",
+                    background_color: "transparent",
+                    font_size: "14",
+                    text_align: "center",
+                    vertical_align: "center",
+                    show_tick: false,
+                    tick_pos: "50%",
+                    tick_edge: "left",
+                    has_padding: true
+                  }
+                }
+              ]
+            }
+          },
+          {
+            definition: {
+              title: "Events",
+              background_color: "vivid_purple",
+              show_title: true,
+              type: "group",
+              layout_type: "ordered",
+              widgets: [
+                {
+                  definition: {
+                    title: "Total Events",
+                    time: {},
+                    type: "query_value",
+                    requests: [
                         {
-                            "formulas": [
+                            formulas: [
                                 {
-                                    "formula": "default_zero(query1)",
-                                    "number_format": {
-                                        "unit": {
-                                            "type": "custom_unit_label",
-                                            "label": "Events"
+                                    formula: "default_zero(query1)",
+                                    number_format: {
+                                        unit: {
+                                            type: "custom_unit_label",
+                                            label: "Events"
                                         }
                                     }
                                 }
                             ],
-                            "response_format": "scalar",
-                            "queries": [
+                            response_format: "scalar",
+                            queries: [
                                 {
-                                    "search": {
-                                        "query": "app:starky"
+                                    search: {
+                                        query: "app:starky"
                                     },
-                                    "data_source": "logs",
-                                    "compute": {
-                                        "aggregation": "count"
+                                    data_source: "logs",
+                                    compute: {
+                                        aggregation: "count"
                                     },
-                                    "name": "query1",
-                                    "indexes": [
+                                    name: "query1",
+                                    indexes: [
                                         "*"
                                     ],
-                                    "group_by": []
+                                    group_by: []
                                 }
                             ]
                         }
                     ],
-                    "autoscale": false,
-                    "text_align": "center",
-                    "custom_links": [],
-                    "precision": 0,
-                    "timeseries_background": {
-                        "type": "area",
-                        "yaxis": {
-                            "include_zero": true
-                        }
-                    }
-                }
+                    autoscale: false,
+                    text_align: "center",
+                    custom_links: [],
+                    precision: 0
+                  }
                 },
+                {
+                  definition: {
+                    title: "Events count over time",
+                    show_legend: true,
+                    legend_layout: "auto",
+                    legend_columns: ["avg","min","max","value","sum"],
+                    time: {},
+                    type: "timeseries",
+                    requests: [
+                        {
+                            formulas: [
+                                {
+                                    formula: "default_zero(query1)",
+                                    number_format: {
+                                        unit: {
+                                            type: "custom_unit_label",
+                                            label: "Events"
+                                        }
+                                    }
+                                }
+                            ],
+                            queries: [
+                                {
+                                    search: {
+                                        query: "app:starky"
+                                    },
+                                    data_source: "logs",
+                                    compute: {
+                                        aggregation: "count"
+                                    },
+                                    name: "query1",
+                                    indexes: [
+                                        "*"
+                                    ],
+                                    group_by: []
+                                }
+                            ],
+                            response_format: "timeseries",
+                            style: {
+                                palette: "dog_classic",
+                                order_by: "values",
+                                line_type: "solid",
+                                line_width: "normal"
+                            },
+                            display_type: "line"
+                        }
+                    ]
+                  }
+                },
+                {
+                  definition: {
+                    title: "Top events",
+                    type: "toplist",
+                    requests: [
+                        {
+                            response_format: "scalar",
+                            queries: [
+                                {
+                                    name: "q1",
+                                    data_source: "logs",
+                                    search: {
+                                        query: "app:starky"
+                                    },
+                                    indexes: [
+                                        "*"
+                                    ],
+                                    group_by: [
+                                        {
+                                            facet: "@event_name",
+                                            limit: 20,
+                                            sort: {
+                                                aggregation: "count",
+                                                order: "desc",
+                                                metric: "count"
+                                            },
+                                            should_exclude_missing: true
+                                        }
+                                    ],
+                                    compute: {
+                                        aggregation: "count"
+                                    },
+                                    storage: "hot"
+                                }
+                            ],
+                            formulas: [
+                                {
+                                    formula: "q1"
+                                }
+                            ],
+                            sort: {
+                                count: 25,
+                                order_by: [
+                                    {
+                                        type: "formula",
+                                        index: 0,
+                                        order: "desc"
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    style: {
+                        scaling: "absolute"
+                    }
+                  }
+                }
               ]
             }
           }
