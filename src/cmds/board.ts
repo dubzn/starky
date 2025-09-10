@@ -34,6 +34,20 @@ export const builder = (y: any) =>
                 {
                   definition: {
                     type: "note",
+                    content: "![Alt text](https://i.ibb.co/4g3HJNLW/image.png)",
+                    background_color: "transparent",
+                    font_size: "12",
+                    text_align: "left",
+                    vertical_align: "top",
+                    show_tick: false,
+                    tick_pos: "50%",
+                    tick_edge: "left",
+                    has_padding: false
+                  }
+                },
+                {
+                  definition: {
+                    type: "note",
                     content: "# Real-time blockchain event monitoring with automatic event name mapping",
                     background_color: "transparent",
                     font_size: "18",
@@ -72,16 +86,151 @@ export const builder = (y: any) =>
               widgets: [
                 {
                   definition: {
-                    type: "note",
-                    content: "Contract call monitoring will be added here in future updates.",
-                    background_color: "transparent",
-                    font_size: "14",
+                    title: "Total Function Calls",
+                    time: {},
+                    type: "query_value",
+                    requests: [
+                        {
+                            formulas: [
+                                {
+                                    formula: "default_zero(query1)",
+                                    number_format: {
+                                        unit: {
+                                            type: "custom_unit_label",
+                                            label: "Calls"
+                                        }
+                                    }
+                                }
+                            ],
+                            response_format: "scalar",
+                            queries: [
+                                {
+                                    search: {
+                                        query: "app:starky AND type:function_call"
+                                    },
+                                    data_source: "logs",
+                                    compute: {
+                                        aggregation: "count"
+                                    },
+                                    name: "query1",
+                                    indexes: [
+                                        "*"
+                                    ],
+                                    group_by: []
+                                }
+                            ]
+                        }
+                    ],
+                    autoscale: false,
                     text_align: "center",
-                    vertical_align: "center",
-                    show_tick: false,
-                    tick_pos: "50%",
-                    tick_edge: "left",
-                    has_padding: true
+                    custom_links: [],
+                    precision: 0
+                  }
+                },
+                {
+                  definition: {
+                    title: "Function calls count over time",
+                    show_legend: true,
+                    legend_layout: "auto",
+                    legend_columns: ["avg","min","max","value","sum"],
+                    time: {},
+                    type: "timeseries",
+                    requests: [
+                        {
+                            formulas: [
+                                {
+                                    formula: "default_zero(query1)",
+                                    number_format: {
+                                        unit: {
+                                            type: "custom_unit_label",
+                                            label: "Calls"
+                                        }
+                                    }
+                                }
+                            ],
+                            queries: [
+                                {
+                                    search: {
+                                        query: "app:starky AND type:function_call"
+                                    },
+                                    data_source: "logs",
+                                    compute: {
+                                        aggregation: "count"
+                                    },
+                                    name: "query1",
+                                    indexes: [
+                                        "*"
+                                    ],
+                                    group_by: []
+                                }
+                            ],
+                            response_format: "timeseries",
+                            style: {
+                                palette: "dog_classic",
+                                order_by: "values",
+                                line_type: "solid",
+                                line_width: "normal"
+                            },
+                            display_type: "line"
+                        }
+                    ]
+                  }
+                },
+                {
+                  definition: {
+                    title: "Top function calls",
+                    type: "toplist",
+                    requests: [
+                        {
+                            response_format: "scalar",
+                            queries: [
+                                {
+                                    name: "q1",
+                                    data_source: "logs",
+                                    search: {
+                                        query: "app:starky AND type:function_call"
+                                    },
+                                    indexes: [
+                                        "*"
+                                    ],
+                                    group_by: [
+                                        {
+                                            facet: "@function_name",
+                                            limit: 20,
+                                            sort: {
+                                                aggregation: "count",
+                                                order: "desc",
+                                                metric: "count"
+                                            },
+                                            should_exclude_missing: true
+                                        }
+                                    ],
+                                    compute: {
+                                        aggregation: "count"
+                                    },
+                                    storage: "hot"
+                                }
+                            ],
+                            formulas: [
+                                {
+                                    formula: "q1"
+                                }
+                            ],
+                            sort: {
+                                count: 25,
+                                order_by: [
+                                    {
+                                        type: "formula",
+                                        index: 0,
+                                        order: "desc"
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    style: {
+                        scaling: "absolute"
+                    }
                   }
                 }
               ]
