@@ -5,6 +5,23 @@ export const command = "board";
 export const describe = "Manage Datadog dashboards";
 
 /**
+ * Generate contract filter for queries
+ */
+function getContractFilter(contracts: string[]): string {
+  if (contracts.length === 0) {
+    return "app:starky";
+  }
+  
+  if (contracts.length === 1) {
+    return `app:starky AND contract:${contracts[0]}`;
+  }
+  
+  // Multiple contracts - use OR condition
+  const contractFilters = contracts.map(contract => `contract:${contract}`).join(" OR ");
+  return `app:starky AND (${contractFilters})`;
+}
+
+/**
  * Generate simple widgets for event monitoring
  */
 function generateSimpleWidgets(): any[] {
@@ -20,6 +37,7 @@ export const builder = (y: any) =>
       async (argv: any) => {
         const cfg = loadConfig();
         const contracts = cfg.contracts || [];
+        const contractFilter = getContractFilter(contracts);
         
         // Generate base widgets with hero image
         const baseWidgets = [
@@ -106,7 +124,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: "app:starky AND type:function_call"
+                                        query: `${contractFilter} AND type:function_call`
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -151,7 +169,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: "app:starky AND type:function_call"
+                                        query: `${contractFilter} AND type:function_call`
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -188,7 +206,7 @@ export const builder = (y: any) =>
                                     name: "q1",
                                     data_source: "logs",
                                     search: {
-                                        query: "app:starky AND type:function_call"
+                                        query: `${contractFilter} AND type:function_call`
                                     },
                                     indexes: [
                                         "*"
@@ -266,7 +284,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: "app:starky"
+                                        query: contractFilter
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -311,7 +329,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: "app:starky"
+                                        query: contractFilter
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -348,7 +366,7 @@ export const builder = (y: any) =>
                                     name: "q1",
                                     data_source: "logs",
                                     search: {
-                                        query: "app:starky"
+                                        query: contractFilter
                                     },
                                     indexes: [
                                         "*"
@@ -405,12 +423,20 @@ export const builder = (y: any) =>
         // Combine all widgets
         const allWidgets = [...baseWidgets, ...simpleWidgets];
         
+        // Generate template variables for each contract
+        const templateVariables = contracts.length > 0 
+          ? contracts.map((contract, index) => ({
+              name: `contract_${index}`,
+              prefix: "contract",
+              available_values: [contract],
+              default: contract
+            }))
+          : [{ name: "contract", prefix: "contract", default: "*" }];
+
         const template = {
           title: argv.name,
           layout_type: "ordered",
-          template_variables: [
-            { name: "contract", prefix: "contract", default: "*" }
-          ],
+          template_variables: templateVariables,
           widgets: allWidgets
         };
 

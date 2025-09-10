@@ -32,6 +32,8 @@ function extractFunctionCalls(tx: any, abiFetcher: ABIFetcher): Array<{
   const txType = (tx as any).type;
   const calldata = (tx as any).calldata;
   
+  console.log(`🔍 Extracting function calls from tx type: ${txType}, calldata length: ${calldata?.length || 0}`);
+  
   if ((txType === 'INVOKE' || txType === 'INVOKE_FUNCTION') && calldata) {
     // For invoke transactions, the first calldata element is usually the function selector
     if (calldata && calldata.length > 0) {
@@ -79,96 +81,96 @@ function extractFunctionCalls(tx: any, abiFetcher: ABIFetcher): Array<{
 }
 
 /**
- * Get transactions from blocks and extract function calls
+ * Get function calls from events by fetching their transactions
  */
-async function getFunctionCallsFromBlocks(
+async function getFunctionCallsFromEvents(
   provider: RpcProvider, 
-  fromBlock: any, 
+  events: any[], 
   contracts: string[], 
   abiFetcher: ABIFetcher,
   verbose: boolean
 ): Promise<DDLog[]> {
   const logs: DDLog[] = [];
+  const processedTxs = new Set<string>(); // Avoid processing the same transaction multiple times
   
   try {
-    // Get the latest block number
-    const latestBlock = await provider.getBlockNumber();
-    const startBlock = typeof fromBlock === 'object' ? fromBlock.block_number : (fromBlock === 'latest' ? latestBlock : Number(fromBlock));
+    console.log(`🔍 FUNCTION CALL SCAN: analyzing ${events.length} events for function calls`);
+    console.log(`🎯 TARGET CONTRACTS: ${contracts.length} contracts to monitor`);
     
-    // Process only the latest few blocks to avoid overwhelming the RPC
-    const maxBlocks = 10; // Limit to last 10 blocks for efficiency
-    const actualStartBlock = Math.max(startBlock, latestBlock - maxBlocks);
-    
-    if (verbose) {
-      console.log(`🔍 Scanning blocks ${actualStartBlock} to ${latestBlock} for function calls...`);
-    }
-    
-    for (let currentBlock = actualStartBlock; currentBlock <= latestBlock; currentBlock++) {
-      try {
-        const block = await provider.getBlockWithTxs(currentBlock);
-        
-        if (block.transactions && block.transactions.length > 0) {
-          for (const tx of block.transactions) {
-            // Filter by contract addresses if specified
-            if (contracts.length > 0) {
-              const txContractAddress = (tx as any).contract_address || (tx as any).sender_address;
-              const isRelevantTx = contracts.some(contract => 
-                txContractAddress?.toLowerCase() === contract.toLowerCase()
-              );
-              if (!isRelevantTx) continue;
-            }
-            
-            const functionCalls = extractFunctionCalls(tx, abiFetcher);
-            
-            // Only log if we found function calls
-            if (functionCalls.length > 0 && verbose) {
-              const txType = (tx as any).type;
-              const txHash = (tx as any).transaction_hash?.slice(0, 10);
-              const txContract = (tx as any).contract_address || (tx as any).sender_address;
-              console.log(`🔍 Found ${functionCalls.length} function call(s) in ${txType} ${txHash}... to ${txContract?.slice(0, 10)}...`);
-            }
-            
-            for (const call of functionCalls) {
-              const tags = [
-                "app:starky",
-                "type:function_call",
-                `contract:${call.contract_address}`,
-                `function_selector:${call.function_selector}`,
-              ].filter(Boolean).join(",");
-              
-              logs.push({
-                message: "starknet_function_call",
-                service: "starky",
-                ddsource: "starknet",
-                ddtags: tags,
-                contract: call.contract_address,
-                contract_address: call.contract_address,
-                function_selector: call.function_selector,
-                function_name: call.function_name,
-                tx_hash: call.tx_hash,
-                block_number: call.block_number,
-                timestamp: call.timestamp,
-              });
-            }
-          }
-        }
-      } catch (error) {
-        if (verbose) {
-          console.warn(`⚠️  Could not fetch block ${currentBlock}:`, error);
-        }
+    for (const event of events) {
+      const txHash = event.transaction_hash;
+      if (!txHash || processedTxs.has(txHash)) {
+        continue; // Skip if no tx hash or already processed
       }
       
-      // Small delay to avoid rate limiting
-      await sleep(50);
+      processedTxs.add(txHash);
+      
+      try {
+        // Get transaction by hash
+        const tx = await provider.getTransactionByHash(txHash);
+        
+        if (!tx) {
+          if (verbose) {
+            console.log(`⚠️  Could not fetch transaction ${txHash.slice(0, 10)}...`);
+          }
+          continue;
+        }
+        
+        // Since this transaction generated events from our target contracts,
+        // it must be relevant - process it to find function calls
+        console.log(`✅ Processing tx ${txHash.slice(0, 10)}... (generated target contract events)`);
+        
+        const functionCalls = extractFunctionCalls(tx, abiFetcher);
+        
+        // Only log if we found function calls
+        if (functionCalls.length > 0 && verbose) {
+          const txType = (tx as any).type;
+          const txContract = (tx as any).contract_address || (tx as any).sender_address;
+          console.log(`🔍 Found ${functionCalls.length} function call(s) in ${txType} ${txHash.slice(0, 10)}... to ${txContract?.slice(0, 10)}...`);
+        }
+        console.log("--------------------------------");
+        console.log("FUNCTION CALL 0: ", functionCalls[0]);
+        console.log("--------------------------------");
+        for (const call of functionCalls) {
+          const tags = [
+            "app:starky",
+            "type:function_call",
+            `contract:${call.contract_address}`,
+            `function_selector:${call.function_selector}`,
+          ].filter(Boolean).join(",");
+          
+          logs.push({
+            message: "starknet_function_call",
+            service: "starky",
+            ddsource: "starknet",
+            ddtags: tags,
+            contract: call.contract_address,
+            contract_address: call.contract_address,
+            function_selector: call.function_selector,
+            function_name: call.function_name,
+            tx_hash: call.tx_hash,
+            block_number: call.block_number,
+            timestamp: call.timestamp,
+          });
+        }
+        
+        // Small delay to avoid rate limiting
+        await sleep(50);
+        
+      } catch (error) {
+        if (verbose) {
+          console.warn(`⚠️  Could not fetch transaction ${txHash.slice(0, 10)}...:`, error);
+        }
+      }
     }
     
     if (verbose && logs.length > 0) {
-      console.log(`✅ Found ${logs.length} function calls in scanned blocks`);
+      console.log(`✅ Found ${logs.length} function calls from ${processedTxs.size} transactions`);
     }
     
   } catch (error) {
     if (verbose) {
-      console.warn("⚠️  Error fetching function calls:", error);
+      console.warn("⚠️  Error fetching function calls from events:", error);
     }
   }
   
@@ -192,12 +194,10 @@ export const handler = async (argv: any) => {
 
   const cfg = loadConfig();
   const contracts = cfg.contracts ?? [];
-  const excludeNames = cfg.excludeEventNames ?? [];
-  const excludeSelectors = new Set(excludeNames.map((n) => hash.getSelectorFromName(n).toLowerCase()));
   
   // Initialize ABI fetcher and event mapper
   const abiFetcher = new ABIFetcher(provider);
-  const eventMapper = new EventMapper(cfg.contractABIs, abiFetcher, cfg.manualEventMappings);
+  const eventMapper = new EventMapper(abiFetcher, cfg.eventNames);
   
   // Auto-load events from contracts
   if (contracts.length > 0) {
@@ -212,9 +212,7 @@ export const handler = async (argv: any) => {
     console.log("• RPC:", STARKNET_RPC_URL);
     console.log("• Network:", STARKNET_NETWORK);
     console.log("• Contracts:", contracts.length ? contracts : "(none → provider permitting, chain-wide)");
-    console.log("• Excluding event names:", excludeNames);
-    console.log("• Contract ABIs loaded:", cfg.contractABIs?.length || 0);
-    console.log("• Manual event mappings:", cfg.manualEventMappings?.length || 0);
+    console.log("• Event names configured:", cfg.eventNames?.length || 0);
     console.log("• Known event names:", eventMapper.getKnownEventNames().length);
     console.log("• Chunk size:", STARKY_CHUNK_SIZE);
     console.log("• Interval (ms):", argv["interval-ms"]);
@@ -238,25 +236,7 @@ export const handler = async (argv: any) => {
       const addresses = contracts.length ? contracts : [undefined];
       let sent = 0, fetched = 0, functionCallsSent = 0;
 
-      // First, get function calls from blocks
-      if (contracts.length > 0) {
-        const functionCallLogs = await getFunctionCallsFromBlocks(
-          provider, 
-          fromBlock, 
-          contracts, 
-          abiFetcher, 
-          argv.verbose
-        );
-        
-        if (functionCallLogs.length > 0) {
-          if (argv.verbose) {
-            console.log(`📤 Sending ${functionCallLogs.length} function call logs to Datadog`);
-            console.log("🔍 Sample function call log:", JSON.stringify(functionCallLogs[0], null, 2));
-          }
-          await ddSendLogs(functionCallLogs, { verbose: false, preview: argv.sample, dumpFile: argv.dump as string | undefined });
-          functionCallsSent += functionCallLogs.length;
-        }
-      }
+      // We'll get function calls from events after we fetch them
 
       for (const addr of addresses) {
         let cont: string | undefined = undefined;
@@ -279,18 +259,27 @@ export const handler = async (argv: any) => {
             if (cont) console.log(`   → has more pages...`);
           }
 
+          // Get function calls from these events
+          if (contracts.length > 0 && events.length > 0) {
+            const functionCallLogs = await getFunctionCallsFromEvents(
+              provider, 
+              events, 
+              contracts, 
+              abiFetcher, 
+              argv.verbose
+            );
+            
+            if (functionCallLogs.length > 0) {
+              await ddSendLogs(functionCallLogs, { verbose: true, preview: argv.sample, dumpFile: argv.dump as string | undefined });
+              functionCallsSent += functionCallLogs.length;
+            }
+          }
+
           const logs: DDLog[] = [];
           for (let i = 0; i < events.length; i++) {
             const e = events[i];
+
             const sel = (e.keys?.[0] ?? "").toLowerCase();
-            if (sel && excludeSelectors.has(sel)) continue;
-
-            // Debug: show event processing details (only first event per batch)
-            if (argv.verbose && i === 0 && events.length > 0) {
-              const eventName = eventMapper.getEventNameWithContext(e.keys?.[0] || "", e.from_address || "");
-              console.log(`🎯 Sample event: "${eventName}" (${e.keys?.[0]?.slice(0, 10)}...) from block ${e.block_number}`);
-            }
-
             const tags = [
               "app:starky",
               `network:${STARKNET_NETWORK}`,
@@ -322,10 +311,6 @@ export const handler = async (argv: any) => {
               console.log(`📤 Sending ${logs.length} logs to Datadog`);
             }
             
-            // Show sample log structure for debugging
-            if (logs.length > 0 && argv.verbose) {
-              console.log("🔍 Sample log structure:", JSON.stringify(logs[0], null, 2));
-            }
             await ddSendLogs(logs, { verbose: true, preview: argv.sample, dumpFile: argv.dump as string | undefined });
             sent += logs.length;
           }
@@ -337,9 +322,6 @@ export const handler = async (argv: any) => {
           console.log(`📈 Function calls: ${functionCallsSent} found and sent to Datadog`);
         }
         console.log(`📈 Events: ${fetched} fetched, ${sent} sent to Datadog`);
-        if (fetched > 0 && sent === 0) {
-          console.log(`⚠️  Warning: fetched events but sent 0 logs (check excludeEventNames filter)`);
-        }
       }
       // After the first cycle, tail the head
       if (typeof fromBlock === "object") {

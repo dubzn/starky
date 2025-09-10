@@ -1,5 +1,4 @@
 import { hash } from "starknet";
-import { ContractABI, ManualEventMapping } from "./config.js";
 import { ABIFetcher } from "./abi-fetcher.js";
 
 /**
@@ -11,10 +10,9 @@ export class EventMapper {
   private abiFetcher?: ABIFetcher;
   private autoFetchEnabled: boolean = false;
 
-  constructor(contractABIs: ContractABI[] = [], abiFetcher?: ABIFetcher, manualMappings: ManualEventMapping[] = []) {
+  constructor(abiFetcher?: ABIFetcher, eventNames: string[] = []) {
     this.abiFetcher = abiFetcher;
-    this.loadABIs(contractABIs);
-    this.loadManualMappings(manualMappings);
+    this.loadEventNames(eventNames);
   }
 
   /**
@@ -46,31 +44,19 @@ export class EventMapper {
     console.log(`✅ Loaded ${this.selectorToName.size} unique event mappings`);
   }
 
-  private loadABIs(contractABIs: ContractABI[]) {
-    for (const contractABI of contractABIs) {
-      const address = contractABI.address.toLowerCase();
-      this.contractToABI.set(address, contractABI.abi);
-      
-      // Extract events from ABI
-      if (contractABI.abi && Array.isArray(contractABI.abi)) {
-        for (const item of contractABI.abi) {
-          if (item.type === "event" && item.name) {
-            try {
-              const selector = hash.getSelectorFromName(item.name).toLowerCase();
-              this.selectorToName.set(selector, item.name);
-            } catch (error) {
-              console.warn(`Failed to get selector for event ${item.name}:`, error);
-            }
-          }
-        }
-      }
-    }
-  }
 
-  private loadManualMappings(manualMappings: ManualEventMapping[]) {
-    for (const mapping of manualMappings) {
-      const normalizedSelector = mapping.selector.toLowerCase();
-      this.selectorToName.set(normalizedSelector, mapping.name);
+  /**
+   * Load event names and automatically map them to selectors
+   */
+  private loadEventNames(eventNames: string[]) {
+    for (const eventName of eventNames) {
+      try {
+        const selector = hash.getSelectorFromName(eventName).toLowerCase();
+        this.selectorToName.set(selector, eventName);
+        console.log(`🔗 Auto-mapped event: "${eventName}" → ${selector}`);
+      } catch (error) {
+        console.warn(`⚠️  Failed to map event name "${eventName}":`, error);
+      }
     }
   }
 
@@ -92,6 +78,7 @@ export class EventMapper {
     
     const normalizedSelector = selector.toLowerCase();
     const normalizedAddress = contractAddress?.toLowerCase();
+    
     
     // First try to get from global map
     const globalName = this.selectorToName.get(normalizedSelector);

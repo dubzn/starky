@@ -50,6 +50,9 @@ export async function ddSendLogs(
     console.log(`🛰️  Posting ${entries.length} logs → ${intakeUrl}`);
     for (let i = 0; i < n; i++) {
       const e = entries[i];
+      if (e.message === "starknet_event") {
+        continue;
+      }
       const masked = STARKY_LOG_MASK === "1"
         ? {
             ...e,
