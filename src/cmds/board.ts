@@ -284,7 +284,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: contractFilter
+                                        query: `${contractFilter} AND type:event`
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -329,7 +329,7 @@ export const builder = (y: any) =>
                             queries: [
                                 {
                                     search: {
-                                        query: contractFilter
+                                        query: `${contractFilter} AND type:event`
                                     },
                                     data_source: "logs",
                                     compute: {
@@ -366,7 +366,7 @@ export const builder = (y: any) =>
                                     name: "q1",
                                     data_source: "logs",
                                     search: {
-                                        query: contractFilter
+                                        query: `${contractFilter} AND type:event`
                                     },
                                     indexes: [
                                         "*"

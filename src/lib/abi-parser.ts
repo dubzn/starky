@@ -60,6 +60,13 @@ export interface ABIData {
     CONSTRUCTOR?: any[];
   };
   abi?: any[];
+  // Dojo manifest format
+  events?: Array<{
+    tag: string;
+    selector: string;
+    class_hash: string;
+    members: any[];
+  }>;
 }
 
 /**
@@ -167,6 +174,9 @@ export class ABIParser {
   private async parseDojoContracts(): Promise<void> {
     if (!this.abiData?.contracts) return;
 
+    // Extraer eventos globales del manifest
+    const globalEvents = this.extractGlobalEvents();
+
     for (const contract of this.abiData.contracts) {
       const contractInfo: ContractInfo = {
         address: contract.address,
@@ -177,10 +187,13 @@ export class ABIParser {
         functions: []
       };
 
-      // Extraer eventos del ABI
-      contractInfo.events = this.extractEvents(contract.abi);
+      // Extraer eventos del ABI del contrato
+      const contractEvents = this.extractEvents(contract.abi);
       
-      // Extraer funciones del ABI
+      // Combinar eventos del contrato con eventos globales
+      contractInfo.events = [...contractEvents, ...globalEvents];
+      
+      // Extraer funciones del ABI (incluyendo funciones de interfaces)
       contractInfo.functions = this.extractFunctions(contract.abi);
 
       this.contracts.set(contract.address.toLowerCase(), contractInfo);
@@ -209,6 +222,27 @@ export class ABIParser {
   }
 
   /**
+   * Extraer eventos globales del manifest de Dojo
+   */
+  private extractGlobalEvents(): EventInfo[] {
+    const events: EventInfo[] = [];
+    
+    if (this.abiData?.events) {
+      for (const event of this.abiData.events) {
+        if (event.tag && event.selector) {
+          events.push({
+            name: event.tag,
+            selector: event.selector.toLowerCase(),
+            inputs: event.members || []
+          });
+        }
+      }
+    }
+    
+    return events;
+  }
+
+  /**
    * Extraer eventos del ABI
    */
   private extractEvents(abi: any[]): EventInfo[] {
@@ -234,12 +268,13 @@ export class ABIParser {
   }
 
   /**
-   * Extraer funciones del ABI
+   * Extraer funciones del ABI (incluyendo funciones en interfaces)
    */
   private extractFunctions(abi: any[]): FunctionInfo[] {
     const functions: FunctionInfo[] = [];
 
     for (const item of abi) {
+      // Extraer funciones directas
       if (item.type === "function" && item.name) {
         try {
           const selector = hash.getSelectorFromName(item.name).toLowerCase();
@@ -253,6 +288,27 @@ export class ABIParser {
           });
         } catch (error) {
           console.warn(`⚠️  Failed to calculate selector for function ${item.name}:`, error);
+        }
+      }
+      
+      // Extraer funciones de interfaces
+      if (item.type === "interface" && item.items) {
+        for (const interfaceItem of item.items) {
+          if (interfaceItem.type === "function" && interfaceItem.name) {
+            try {
+              const selector = hash.getSelectorFromName(interfaceItem.name).toLowerCase();
+              
+              functions.push({
+                name: interfaceItem.name,
+                selector: selector,
+                inputs: interfaceItem.inputs || [],
+                outputs: interfaceItem.outputs || [],
+                stateMutability: interfaceItem.state_mutability || "unknown"
+              });
+            } catch (error) {
+              console.warn(`⚠️  Failed to calculate selector for interface function ${interfaceItem.name}:`, error);
+            }
+          }
         }
       }
     }
