@@ -1,63 +1,68 @@
 import { hash } from "starknet";
-import { ABIFetcher } from "./abi-fetcher.js";
+import { ABIParser, EventInfo } from "./abi-parser.js";
 
 /**
- * Maps event selectors to event names using contract ABIs
+ * Maps event selectors to event names using ABI data
  */
 export class EventMapper {
   private selectorToName: Map<string, string> = new Map();
-  private contractToABI: Map<string, any[]> = new Map();
-  private abiFetcher?: ABIFetcher;
-  private autoFetchEnabled: boolean = false;
+  private selectorToEvent: Map<string, EventInfo> = new Map();
+  private abiParser?: ABIParser;
 
-  constructor(abiFetcher?: ABIFetcher, eventNames: string[] = []) {
-    this.abiFetcher = abiFetcher;
-    this.loadEventNames(eventNames);
+  constructor(abiParser?: ABIParser) {
+    this.abiParser = abiParser;
+    if (abiParser) {
+      this.loadEventsFromABI();
+    }
   }
 
   /**
-   * Enable automatic ABI fetching for contracts
+   * Load events from ABI parser
    */
-  enableAutoFetch(abiFetcher: ABIFetcher) {
-    this.abiFetcher = abiFetcher;
-    this.autoFetchEnabled = true;
+  private loadEventsFromABI(): void {
+    if (!this.abiParser) return;
+
+    const events = this.abiParser.getAllEvents();
+    
+    for (const event of events) {
+      this.selectorToName.set(event.selector, event.name);
+      this.selectorToEvent.set(event.selector, event);
+    }
+    
+    console.log(`✅ Loaded ${events.length} events from ABI`);
   }
 
   /**
-   * Load events from contracts automatically
+   * Load events from ABI file
+   */
+  async loadEventsFromABIFile(abiFile: string): Promise<void> {
+    this.abiParser = new ABIParser(abiFile);
+    await this.abiParser.loadABI();
+    this.loadEventsFromABI();
+  }
+
+  /**
+   * Load events from contracts automatically (legacy method)
    */
   async loadEventsFromContracts(contractAddresses: string[]): Promise<void> {
-    if (!this.abiFetcher) {
-      console.warn("ABIFetcher not available for auto-loading events");
+    if (!this.abiParser) {
+      console.warn("ABI Parser not available for auto-loading events");
       return;
     }
 
     console.log(`🔄 Auto-loading events for ${contractAddresses.length} contracts...`);
-    const eventsMap = await this.abiFetcher.getEventsForContracts(contractAddresses);
     
-    for (const [address, events] of eventsMap) {
-      for (const event of events) {
-        this.selectorToName.set(event.selector, event.name);
+    for (const address of contractAddresses) {
+      const contract = this.abiParser.getContract(address);
+      if (contract) {
+        for (const event of contract.events) {
+          this.selectorToName.set(event.selector, event.name);
+          this.selectorToEvent.set(event.selector, event);
+        }
       }
     }
     
     console.log(`✅ Loaded ${this.selectorToName.size} unique event mappings`);
-  }
-
-
-  /**
-   * Load event names and automatically map them to selectors
-   */
-  private loadEventNames(eventNames: string[]) {
-    for (const eventName of eventNames) {
-      try {
-        const selector = hash.getSelectorFromName(eventName).toLowerCase();
-        this.selectorToName.set(selector, eventName);
-        console.log(`🔗 Auto-mapped event: "${eventName}" → ${selector}`);
-      } catch (error) {
-        console.warn(`⚠️  Failed to map event name "${eventName}":`, error);
-      }
-    }
   }
 
   /**
@@ -77,33 +82,34 @@ export class EventMapper {
     if (!selector) return "unknown";
     
     const normalizedSelector = selector.toLowerCase();
-    const normalizedAddress = contractAddress?.toLowerCase();
-    
     
     // First try to get from global map
     const globalName = this.selectorToName.get(normalizedSelector);
     if (globalName) return globalName;
     
-    // If not found globally, try to find in specific contract ABI
-    if (normalizedAddress && this.contractToABI.has(normalizedAddress)) {
-      const abi = this.contractToABI.get(normalizedAddress);
-      if (abi) {
-        for (const item of abi) {
-          if (item.type === "event" && item.name) {
-            try {
-              const itemSelector = hash.getSelectorFromName(item.name).toLowerCase();
-              if (itemSelector === normalizedSelector) {
-                return item.name;
-              }
-            } catch (error) {
-              // Ignore errors for individual items
-            }
+    // If not found globally, try to find in specific contract
+    if (this.abiParser) {
+      const contract = this.abiParser.getContract(contractAddress);
+      if (contract) {
+        for (const event of contract.events) {
+          if (event.selector === normalizedSelector) {
+            return event.name;
           }
         }
       }
     }
     
     return selector;
+  }
+
+  /**
+   * Get event info from selector
+   */
+  getEventInfo(selector: string): EventInfo | undefined {
+    if (!selector) return undefined;
+    
+    const normalizedSelector = selector.toLowerCase();
+    return this.selectorToEvent.get(normalizedSelector);
   }
 
   /**
@@ -114,9 +120,34 @@ export class EventMapper {
   }
 
   /**
+   * Get all known event selectors
+   */
+  getKnownEventSelectors(): string[] {
+    return Array.from(this.selectorToName.keys());
+  }
+
+  /**
    * Check if selector is known
    */
   isKnownSelector(selector: string): boolean {
     return this.selectorToName.has(selector.toLowerCase());
+  }
+
+  /**
+   * Get events by contract address
+   */
+  getEventsByContract(contractAddress: string): EventInfo[] {
+    if (!this.abiParser) return [];
+    
+    const contract = this.abiParser.getContract(contractAddress);
+    return contract ? contract.events : [];
+  }
+
+  /**
+   * Get all events from ABI
+   */
+  getAllEvents(): EventInfo[] {
+    if (!this.abiParser) return [];
+    return this.abiParser.getAllEvents();
   }
 }

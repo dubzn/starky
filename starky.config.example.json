@@ -1,14 +1,8 @@
 {
-  "activeBoardId": "mxw-zf8-k69",
+  "activeBoardId": "",
+  "abiFile": "path_to_abi.json",
   "contracts": [
-    "0x2c5dab047c12c6f4eb49debee9398b9fb5fab5d60d5a86fbd150f19997109d6",
-    "0x57e4e85ca6a51a38f1c284087a836eb6aa96e7766907fed88df41a28f551c08",
-    "0x6a0c804f8399af31af6e64b43e3aa50ef9e14e2ec755fe05c98c2ffa4834e75",
-    "0x633fbfe3048924cb0ccbf37d4e38f342d0ed93d597069332c1759a40f901b02"
+    "0x0"
   ],
-  "eventNames": [
-    "StoreSetRecord",
-    "Transfer",
-    "Approval"
-  ]
+  "eventNames": []
 }

@@ -1,46 +1,8 @@
 {
-  "activeBoardId": "6we-bza-znr",
+  "activeBoardId": "qif-d9j-ned",
+  "abiFile": "contract_class.json",
   "contracts": [
-    "0x2c5dab047c12c6f4eb49debee9398b9fb5fab5d60d5a86fbd150f19997109d6",
-    "0x57e4e85ca6a51a38f1c284087a836eb6aa96e7766907fed88df41a28f551c08",
-    "0x6a0c804f8399af31af6e64b43e3aa50ef9e14e2ec755fe05c98c2ffa4834e75",
-    "0x633fbfe3048924cb0ccbf37d4e38f342d0ed93d597069332c1759a40f901b02"
+    "0x03e38db635884a4a010dad58af7f4c53c629b1fa740967ff74b9aae3a5e48a6f"
   ],
-  "eventNames": [
-    "BeastAttack",
-    "BeastIsMintable",
-    "AdventurerConsumed",
-    "BeastNFT",
-    "BlisterPackItem",
-    "BlisterPackResult",
-    "BuyBlisterPackEvent",
-    "BuyCardEvent",
-    "BuyPokerHandEvent",
-    "BuyRerollEvent",
-    "CardScoreEvent",
-    "ChallengeCompleted",
-    "CreateGameEvent",
-    "DetailEarnedEvent",
-    "ItemChallengeCompleted",
-    "ModifierCardSuitEvent",
-    "NeonPokerHandEvent",
-    "ObstacleAttack",
-    "ObstacleHandScore",
-    "PlayGameOverEvent",
-    "PlayPokerHandEvent",
-    "PlayWinGameEvent",
-    "PlayerAttack",
-    "PlayerBeast",
-    "PlayerHealed",
-    "PokerHandEvent",
-    "RageRound",
-    "Reward",
-    "RoundScoreEvent",
-    "SpecialCashEvent",
-    "SpecialGlobalEvent",
-    "SpecialModifierMultiEvent",
-    "SpecialModifierPointsEvent",
-    "SpecialModifierSuitEvent",
-    "SpecialPokerHandEvent"
-  ]
+  "eventNames": []
 }
