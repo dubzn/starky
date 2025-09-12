@@ -47,7 +47,7 @@ DD_SITE=us5.datadoghq.com  # or your Datadog site
 
 # Starknet RPC (optional, defaults to Alchemy)
 # Supports any RPC included Katana
-STARKNET_RPC_URL=https://starknet-mainnet.g.alchemy.com/v2/your_api_key
+STARKNET_RPC_URL=rpc_url
 ```
 
 ## Quick Start
