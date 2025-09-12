@@ -35,8 +35,12 @@ export interface FunctionInfo {
 
 export interface ABIData {
   world?: {
-    kind: string;
+    address: string;
     class_hash: string;
+    seed: string;
+    name: string;
+    entrypoints: string[];
+    kind: string;
     original_class_hash: string;
     abi: any[];
   };
@@ -177,6 +181,25 @@ export class ABIParser {
     // Extraer eventos globales del manifest
     const globalEvents = this.extractGlobalEvents();
 
+    // Agregar el world contract si existe
+    if (this.abiData.world?.address) {
+      const worldContractInfo: ContractInfo = {
+        address: this.abiData.world.address,
+        classHash: this.abiData.world.class_hash,
+        name: "World",
+        kind: "world",
+        events: [...globalEvents], // Solo eventos globales para el world
+        functions: []
+      };
+
+      this.contracts.set(this.abiData.world.address.toLowerCase(), worldContractInfo);
+      
+      console.log(`📋 Contract ${worldContractInfo.name}:`);
+      console.log(`  • Address: ${this.abiData.world.address}`);
+      console.log(`  • Events: ${worldContractInfo.events.length}`);
+      console.log(`  • Functions: ${worldContractInfo.functions.length}`);
+    }
+
     for (const contract of this.abiData.contracts) {
       const contractInfo: ContractInfo = {
         address: contract.address,
@@ -251,7 +274,11 @@ export class ABIParser {
     for (const item of abi) {
       if (item.type === "event" && item.name) {
         try {
-          const selector = hash.getSelectorFromName(item.name).toLowerCase();
+          // Para eventos de Dojo, usar el selector pre-calculado si está disponible
+          // Si no, calcular con hash.getSelectorFromName
+          const selector = item.selector 
+            ? item.selector.toLowerCase()
+            : hash.getSelectorFromName(item.name).toLowerCase();
           
           events.push({
             name: item.name,
@@ -259,7 +286,7 @@ export class ABIParser {
             inputs: item.inputs || []
           });
         } catch (error) {
-          console.warn(`⚠️  Failed to calculate selector for event ${item.name}:`, error);
+          console.warn(`⚠️  Failed to get selector for event ${item.name}:`, error);
         }
       }
     }
@@ -441,6 +468,16 @@ export class ABIParser {
   }
 
   /**
+   * Obtener eventos del manifest (sección global events)
+   */
+  getManifestEvents(): Array<{ tag: string; selector: string; class_hash: string; members: any[] }> {
+    if (!this.abiData || !this.abiData.events) {
+      return [];
+    }
+    return this.abiData.events;
+  }
+
+  /**
    * Obtener resumen del ABI
    */
   getSummary(): {
@@ -450,6 +487,7 @@ export class ABIParser {
     contracts: number;
     totalEvents: number;
     totalFunctions: number;
+    manifestEvents: number;
   } {
     if (!this.abiData) {
       throw new Error("ABI not loaded");
@@ -457,6 +495,7 @@ export class ABIParser {
 
     const totalEvents = this.getAllEvents().length;
     const totalFunctions = this.getAllFunctions().length;
+    const manifestEvents = this.getManifestEvents().length;
 
     if (this.isDojoABI()) {
       return {
@@ -467,7 +506,8 @@ export class ABIParser {
         },
         contracts: this.contracts.size,
         totalEvents,
-        totalFunctions
+        totalFunctions,
+        manifestEvents
       };
     } else if (this.isContractClass()) {
       return {
@@ -475,7 +515,8 @@ export class ABIParser {
         version: this.abiData.contract_class_version,
         contracts: this.contracts.size,
         totalEvents,
-        totalFunctions
+        totalFunctions,
+        manifestEvents
       };
     } else {
       throw new Error("Unknown ABI type");

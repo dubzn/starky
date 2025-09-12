@@ -24,24 +24,16 @@ function extractFunctionNamesFromTx(tx: any, functionSelectorDict: { [key: strin
       // Verificar si este elemento es exactamente uno de nuestros selectores de función
       if (functionSelectorDict[data]) {
         selectors.push(data);
-        console.log(`🔍 Found function selector at position ${i}: ${data} -> ${functionSelectorDict[data]}`);
       }
     }
   }
   
-  // Debug: mostrar selectores encontrados
-  if (selectors.length > 0) {
-    console.log(`🔍 Found valid function selectors in calldata: ${selectors.join(', ')}`);
-  }
   
   for (const selector of selectors) {
     // Usar diccionario para búsqueda rápida
     const functionName = functionSelectorDict[selector];
     if (functionName) {
       functionNames.push(functionName);
-    } else {
-      // Debug: mostrar selectores no encontrados
-      console.log(`🔍 Selector not found in dictionary: ${selector}`);
     }
   }
   return functionNames;
@@ -71,10 +63,6 @@ function extractFunctionCalls(tx: any, functionSelectorDict: { [key: string]: st
   const calldata = (tx as any).calldata;
   const contractAddress = (tx as any).contract_address || "0x0";
   
-  if (verbose) {
-    console.log(`🔍 Extracting function calls from tx type: ${txType}, calldata length: ${calldata?.length || 0}`);
-    console.log(`🔍 Calldata: ${JSON.stringify(calldata)}`);
-  }
   
   if ((txType === 'INVOKE' || txType === 'INVOKE_FUNCTION') && calldata && contractAddress) {
     // Use dictionary for function name extraction
@@ -99,9 +87,6 @@ function extractFunctionCalls(tx: any, functionSelectorDict: { [key: string]: st
           });
         } catch (error) {
           // If we can't get the selector, skip this function
-          if (verbose) {
-            console.log(`⚠️  Could not get selector for function: ${functionName}`);
-          }
         }
       }
     } else {
@@ -167,9 +152,6 @@ async function getFunctionCallsFromEvents(
   const processedTxs = new Set<string>(); // Avoid processing the same transaction multiple times
   
   try {
-    console.log(`🔍 FUNCTION CALL SCAN: analyzing ${events.length} events for function calls`);
-    console.log(`🎯 TARGET CONTRACTS: ${contracts.length} contracts to monitor`);
-    
     for (const event of events) {
       const txHash = event.transaction_hash;
       if (!txHash || processedTxs.has(txHash)) {
@@ -183,23 +165,10 @@ async function getFunctionCallsFromEvents(
         const tx = await provider.getTransactionByHash(txHash);
         
         if (!tx) {
-          if (verbose) {
-            console.log(`⚠️  Could not fetch transaction ${txHash.slice(0, 10)}...`);
-          }
           continue;
         }
         
-        // Since this transaction generated events from our target contracts,
-        // it must be relevant - process it to find function calls
-        console.log(`✅ Processing tx ${txHash.slice(0, 10)}... (generated target contract events)`);
-        const functionCalls = extractFunctionCalls(tx, functionSelectorDict, verbose);
-        
-        // Only log if we found function calls
-        if (functionCalls.length > 0 && verbose) {
-          const txType = (tx as any).type;
-          const txContract = (tx as any).contract_address || (tx as any).sender_address;
-          console.log(`🔍 Found ${functionCalls.length} function call(s) in ${txType} ${txHash.slice(0, 10)}... to ${txContract?.slice(0, 10)}...`);
-        }
+        const functionCalls = extractFunctionCalls(tx, functionSelectorDict, false);
 
         // Log function calls with the correct format (like TX ANALYZER)
         for (const call of functionCalls) {
@@ -225,20 +194,12 @@ async function getFunctionCallsFromEvents(
         await sleep(50);
         
       } catch (error) {
-        if (verbose) {
-          console.warn(`⚠️  Could not fetch transaction ${txHash.slice(0, 10)}...:`, error);
-        }
+        // Silent fail
       }
     }
     
-    if (verbose && logs.length > 0) {
-      console.log(`✅ Found ${logs.length} function calls from ${processedTxs.size} transactions`);
-    }
-    
   } catch (error) {
-    if (verbose) {
-      console.warn("⚠️  Error fetching function calls from events:", error);
-    }
+    // Silent fail
   }
   
   return logs;
@@ -336,8 +297,8 @@ export const handler = async (argv: any) => {
         const lastPart = eventNameParts[eventNameParts.length - 1];
         const cleanEventName = lastPart.replace(/Event$/, ''); // Quitar "Event" al final
         
-        // Para eventos, usar starknetKeccak con el nombre limpio
-        const eventSelector = num.toHex(hash.starknetKeccak(cleanEventName));
+        // Use the original selector from the event (this handles both global events from manifest and contract events)
+        const eventSelector = event.selector;
         
         eventDict[cleanEventName] = eventSelector;
         eventSelectorDict[eventSelector] = cleanEventName;
@@ -371,6 +332,68 @@ export const handler = async (argv: any) => {
     }
   }
   
+  // Add events from manifest's global events section
+  if (abiParser && abiParser.isLoaded()) {
+    const manifestEvents = abiParser.getManifestEvents();
+    console.log(`🔧 Adding ${manifestEvents.length} events from manifest...`);
+    
+    for (const event of manifestEvents) {
+      try {
+        // Use the tag as the event name and the selector directly
+        const eventName = event.tag;
+        const eventSelector = event.selector.toLowerCase();
+        
+        eventDict[eventName] = eventSelector;
+        eventSelectorDict[eventSelector] = eventName;
+        
+        if (argv.verbose) {
+          console.log(`  📋 Manifest Event: ${eventName} -> ${eventSelector}`);
+        }
+      } catch (error) {
+        console.warn(`  ⚠️ Failed to add manifest event ${event.tag}: ${error}`);
+      }
+    }
+  }
+  
+  // Add common Dojo system events as fallback
+  const dojoSystemEvents = [
+    'StoreSetRecord',
+    'StoreUpdateRecord', 
+    'StoreDelRecord',
+    'Event',
+    'ModelRegistered',
+    'ContractUpgraded',
+    'WorldUpgraded',
+    'NamespaceRegistered',
+    'EventRegistered'
+  ];
+  
+  // Add the unknown selector we found in the blockchain
+  const unknownSelector = '0x1c93f6e4703ae90f75338f29bffbe9c1662200cee981f49afeec26e892debcd';
+  if (!eventSelectorDict[unknownSelector]) {
+    eventDict['UnknownDojoEvent'] = unknownSelector;
+    eventSelectorDict[unknownSelector] = 'UnknownDojoEvent';
+    console.log(`🔧 Added unknown Dojo event: UnknownDojoEvent -> ${unknownSelector}`);
+  }
+  
+  console.log(`🔧 Adding ${dojoSystemEvents.length} Dojo system events as fallback...`);
+  for (const systemEvent of dojoSystemEvents) {
+    try {
+      const selector = hash.getSelectorFromName(systemEvent);
+      // Only add if not already in dictionary
+      if (!eventSelectorDict[selector]) {
+        eventDict[systemEvent] = selector;
+        eventSelectorDict[selector] = systemEvent;
+        
+        if (argv.verbose) {
+          console.log(`  🏛️ System Event: ${systemEvent} -> ${selector}`);
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️  Could not generate selector for system event: ${systemEvent}`, error);
+    }
+  }
+
   console.log(`✅ Dictionaries built successfully!`);
   console.log(`  📝 Events: ${Object.keys(eventDict).length} entries`);
   console.log(`  🔧 Functions: ${Object.keys(functionDict).length} entries`);
@@ -419,10 +442,183 @@ export const handler = async (argv: any) => {
     if (argv.verbose) console.log(`⏩ Starting from block #${fromBlock.block_number}`);
   }
 
+  // Test event selector matching
+  console.log("\n🧪 Testing event selector matching:");
+  
+  // Get some recent events to test against
+  try {
+    const currentBlock = await provider.getBlockNumber();
+    const recentEvents = await provider.getEvents({
+      from_block: { block_number: currentBlock },
+      to_block: { block_number: currentBlock },
+      chunk_size: 10
+    } as any);
+    
+    if (recentEvents.events && recentEvents.events.length > 0) {
+      console.log(`\n📋 Found ${recentEvents.events.length} events in block ${currentBlock}:`);
+      
+      recentEvents.events.forEach((event: any, index: number) => {
+        const eventSelector = event.keys?.[0] || "";
+        const eventName = getEventName(eventSelector);
+        const contractAddress = event.from_address?.slice(0, 10) + "...";
+        
+        console.log(`\n${index + 1}. Event from ${contractAddress}:`);
+        console.log(`   Selector: ${eventSelector}`);
+        console.log(`   Matched name: ${eventName || "❌ NO MATCH"}`);
+        
+        if (!eventName) {
+          console.log(`   🔍 Looking for this selector in our dictionary...`);
+          const foundInDict = Object.entries(eventSelectorDict).find(([selector, name]) => 
+            selector.toLowerCase() === eventSelector.toLowerCase()
+          );
+          if (foundInDict) {
+            console.log(`   ✅ Found in dict: ${foundInDict[1]} -> ${foundInDict[0]}`);
+          } else {
+            console.log(`   ❌ Not found in dictionary`);
+            console.log(`   📝 Available selectors in dict: ${Object.keys(eventSelectorDict).slice(0, 5).join(", ")}...`);
+          }
+        }
+      });
+    } else {
+      console.log("❌ No events found in recent block");
+    }
+  } catch (error) {
+    console.log(`⚠️  Error fetching events: ${error}`);
+  }
+
+  // Show dictionary contents for debugging
+  console.log("\n📚 Event Dictionary Contents:");
+  console.log(`Total entries: ${Object.keys(eventSelectorDict).length}`);
+  
+  // Show first 10 entries
+  const entries = Object.entries(eventSelectorDict).slice(0, 10);
+  entries.forEach(([selector, name], index) => {
+    console.log(`   ${index + 1}. ${name} -> ${selector}`);
+  });
+  
+  if (Object.keys(eventSelectorDict).length > 10) {
+    console.log(`   ... and ${Object.keys(eventSelectorDict).length - 10} more`);
+  }
+
+  console.log("\n✅ Parser test completed. Starting main ingest loop...");
+
+  //
   while (true) {
     try {
       const addresses = contracts.length ? contracts : [undefined];
       let sent = 0, fetched = 0, functionCallsSent = 0;
+
+      // Debug: show current block and what we're monitoring
+      if (argv.verbose) {
+        const currentBlock = await provider.getBlockNumber();
+        console.log(`\n🔄 Block ${currentBlock} - monitoring ${contracts.length} contracts`);
+        
+        // Debug: check recent blocks for any transactions and process function calls
+        try {
+          const recentBlock = await provider.getBlockWithTxs(currentBlock);
+          const txCount = recentBlock.transactions?.length || 0;
+          
+          // Debug: check for events in recent blocks without address filter
+          try {
+            const recentEvents = await provider.getEvents({
+              from_block: { block_number: currentBlock },
+              to_block: { block_number: currentBlock },
+              chunk_size: 10
+            } as any);
+            const totalEvents = recentEvents.events?.length || 0;
+            if (totalEvents > 0) {
+              console.log(`📊 Block ${currentBlock}: ${txCount} txs, ${totalEvents} events`);
+            }
+          } catch (error) {
+            // Silent fail
+          }
+          
+          if (txCount > 0) {
+            const allFunctionCalls: DDLog[] = [];
+            
+            recentBlock.transactions.slice(0, 5).forEach((tx: any, index: number) => {
+              const txType = tx.type || "unknown";
+              const txContract = tx.contract_address || tx.sender_address || "unknown";
+              
+              // Check if this transaction is to one of our monitored contracts
+              const isMonitored = contracts.some(contract => 
+                contract.toLowerCase() === txContract?.toLowerCase()
+              );
+              if (isMonitored) {
+                // Extract function calls from this transaction
+                const functionCalls = extractFunctionCalls(tx, functionSelectorDict, false);
+                if (functionCalls.length > 0) {
+                  console.log(`🔧 Function call: ${functionCalls.map(fc => fc.function_name).join(', ')}`);
+                  
+                  // Convert function calls to DDLog format
+                  for (const call of functionCalls) {
+                    allFunctionCalls.push({
+                      message: "starknet_function_call",
+                      service: "starky",
+                      ddsource: "starknet",
+                      ddtags: [
+                        "app:starky",
+                        "type:function_call",
+                        `contract:${call.contract_address}`
+                      ].filter(Boolean).join(","),
+                      contract: call.contract_address,
+                      type: "function_call",
+                      function_name: call.function_name,
+                      function_selector: call.function_selector,
+                      tx_hash: call.tx_hash,
+                      timestamp: call.timestamp,
+                    });
+                  }
+                }
+              } else {
+                // Check if this transaction calls any of our monitored contracts in calldata
+                const calldata = (tx as any).calldata || [];
+                if (calldata.length > 1) {
+                  const targetContract = calldata[1];
+                  const isTargetMonitored = contracts.some(contract => 
+                    contract.toLowerCase() === targetContract?.toLowerCase()
+                  );
+                  if (isTargetMonitored) {
+                    // Extract function calls from this transaction
+                    const functionCalls = extractFunctionCalls(tx, functionSelectorDict, false);
+                    if (functionCalls.length > 0) {
+                      console.log(`🔧 Function call: ${functionCalls.map(fc => fc.function_name).join(', ')}`);
+                      
+                      // Convert function calls to DDLog format
+                      for (const call of functionCalls) {
+                        allFunctionCalls.push({
+                          message: "starknet_function_call",
+                          service: "starky",
+                          ddsource: "starknet",
+                          ddtags: [
+                            "app:starky",
+                            "type:function_call",
+                            `contract:${call.contract_address}`
+                          ].filter(Boolean).join(","),
+                          contract: call.contract_address,
+                          type: "function_call",
+                          function_name: call.function_name,
+                          function_selector: call.function_selector,
+                          tx_hash: call.tx_hash,
+                          timestamp: call.timestamp,
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            });
+            
+            // Send function calls to Datadog if any were found
+            if (allFunctionCalls.length > 0) {
+              await ddSendLogs(allFunctionCalls, { verbose: false, preview: 0, dumpFile: argv.dump as string | undefined });
+              functionCallsSent += allFunctionCalls.length;
+            }
+          }
+        } catch (error) {
+          console.log(`⚠️  Could not fetch recent block: ${error}`);
+        }
+      }
 
       // We'll get function calls from events after we fetch them
 
@@ -440,12 +636,13 @@ export const handler = async (argv: any) => {
           const events = resp.events ?? [];
           cont = resp.continuation_token;
           fetched += events.length;
-
+          
+          // Debug: always show what we're looking for and what we found
           if (argv.verbose && events.length > 0) {
             const label = addr ? addr.slice(0, 10) + "…" : "(no address filter)";
-            console.log(`📦 Fetched ${events.length} events for ${label}`);
-            if (cont) console.log(`   → has more pages...`);
+            console.log(`📝 Found ${events.length} events from ${label}`);
           }
+
 
           // Get function calls from these events
           if (contracts.length > 0 && events.length > 0) {
@@ -458,7 +655,7 @@ export const handler = async (argv: any) => {
             );
             
             if (functionCallLogs.length > 0) {
-              await ddSendLogs(functionCallLogs, { verbose: true, preview: argv.sample, dumpFile: argv.dump as string | undefined });
+              await ddSendLogs(functionCallLogs, { verbose: false, preview: 0, dumpFile: argv.dump as string | undefined });
               functionCallsSent += functionCallLogs.length;
             }
           }
@@ -479,6 +676,7 @@ export const handler = async (argv: any) => {
             const eventSelector = e.keys?.[0] || "";
             const eventName = getEventName(eventSelector) || `unknown_${eventSelector.slice(0, 8)}`;
             
+            
             logs.push({
               message: "starknet_event",
               service: "starky",
@@ -496,21 +694,16 @@ export const handler = async (argv: any) => {
           }
 
           if (logs.length) {
-            if (argv.verbose) {
-              console.log(`📤 Sending ${logs.length} logs to Datadog`);
-            }
-            
-            await ddSendLogs(logs, { verbose: true, preview: argv.sample, dumpFile: argv.dump as string | undefined });
+            await ddSendLogs(logs, { verbose: false, preview: 0, dumpFile: argv.dump as string | undefined });
             sent += logs.length;
           }
         } while (cont);
       }
 
       if (argv.verbose) {
-        if (functionCallsSent > 0) {
-          console.log(`📈 Function calls: ${functionCallsSent} found and sent to Datadog`);
+        if (functionCallsSent > 0 || sent > 0) {
+          console.log(`📈 Sent: ${functionCallsSent} function calls, ${sent} events`);
         }
-        console.log(`📈 Events: ${fetched} fetched, ${sent} sent to Datadog`);
       }
       // After the first cycle, tail the head
       if (typeof fromBlock === "object") {
