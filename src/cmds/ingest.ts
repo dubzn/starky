@@ -377,26 +377,38 @@ export const handler = async (argv: any) => {
 
   // Resolve initial fromBlock
   let fromBlock: any;
+  let lastProcessedBlock = -1;
+  
   if (!argv["from-block"] || argv["from-block"] === "latest") {
     const head = await provider.getBlockNumber();
     const start = Math.max(0, head - Number(argv["lookback-blocks"]));
     fromBlock = { block_number: start };
+    lastProcessedBlock = start - 1; // Start from the block before to avoid missing the first one
     if (argv.verbose) console.log(`⏪ First pass from block #${start} (head ~#${head})`);
   } else {
     fromBlock = { block_number: Number(argv["from-block"]) };
+    lastProcessedBlock = Number(argv["from-block"]) - 1;
     if (argv.verbose) console.log(`⏩ Starting from block #${fromBlock.block_number}`);
   }
 
 
-  //
+  // Main ingest loop
   while (true) {
     try {
+      // Check current block number first - skip if no new blocks
+      const currentBlock = await provider.getBlockNumber();
+      
+      // Skip if we've already processed this block
+      if (currentBlock <= lastProcessedBlock) {
+        await sleep(argv["interval-ms"]);
+        continue;
+      }
+
       const addresses = contracts.length ? contracts : [undefined];
       let sent = 0, fetched = 0, functionCallsSent = 0;
 
       // Debug: show current block and what we're monitoring
       if (argv.verbose) {
-        const currentBlock = await provider.getBlockNumber();
         console.log(`\n🔄 Block ${currentBlock} - monitoring ${contracts.length} contracts`);
         
         // Debug: check recent blocks for any transactions and process function calls
@@ -591,6 +603,10 @@ export const handler = async (argv: any) => {
           console.log(`📈 Sent: ${functionCallsSent} function calls, ${sent} events`);
         }
       }
+      
+      // Update lastProcessedBlock to the block we just processed
+      lastProcessedBlock = currentBlock;
+      
       // After the first cycle, tail the head
       if (typeof fromBlock === "object") {
         const currentHead = await provider.getBlockNumber();
