@@ -21,13 +21,6 @@ function getContractFilter(contracts: string[]): string {
   return `app:starky AND (${contractFilters})`;
 }
 
-/**
- * Generate simple widgets for event monitoring
- */
-function generateSimpleWidgets(): any[] {
-  return [];
-}
-
 export const builder = (y: any) =>
   y
     .command(
@@ -416,13 +409,6 @@ export const builder = (y: any) =>
           }
         ];
         
-        // Generate simple event widgets
-        console.log("🔄 Generating simple event widgets...");
-        const simpleWidgets = generateSimpleWidgets();
-        
-        // Combine all widgets
-        const allWidgets = [...baseWidgets, ...simpleWidgets];
-        
         // Generate template variables for each contract
         const templateVariables = contracts.length > 0 
           ? contracts.map((contract, index) => ({
@@ -437,16 +423,15 @@ export const builder = (y: any) =>
           title: argv.name,
           layout_type: "ordered",
           template_variables: templateVariables,
-          widgets: allWidgets
+          widgets: baseWidgets
         };
 
         const res = await ddCreateDashboard(template);
         setActiveBoard(res.id);
         console.log(`✅ Dashboard created`);
-        console.log(`id: ${res.id}`);
         console.log(`url: ${res.fullUrl}`);
         console.log(`📌 Active board set in starky.config.json`);
-        console.log(`📊 Generated ${allWidgets.length} widgets (${baseWidgets.length} base + ${simpleWidgets.length} simple)`);
+        console.log(`📊 Generated ${baseWidgets.length} widgets`);
       }
     )
     .command(
