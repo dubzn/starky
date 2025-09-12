@@ -18,7 +18,7 @@ A CLI tool for monitoring Starknet smart contracts and streaming events to Datad
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/dubzn/starky.git
 cd starky
 
 # Install dependencies
