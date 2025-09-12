@@ -212,13 +212,11 @@ export const builder = (y: any) =>
     .option("from-block", { type: "string", desc: "Start at block number or 'latest'" })
     .option("lookback-blocks", { type: "number", default: 500, desc: "If from-block is omitted or 'latest', start N blocks behind head for the first pass" })
     .option("interval-ms", { type: "number", default: 1500, desc: "Polling interval between cycles" })
-    .option("verbose", { type: "boolean", default: true })
-    .option("sample", { type: "number", default: 2 })
-    .option("dump", { type: "string" });
+    .option("verbose", { type: "boolean", default: false })
 
 export const handler = async (argv: any) => {
   const provider = makeProvider();
-  const { STARKNET_NETWORK = "mainnet", STARKY_CHUNK_SIZE = "300", STARKNET_RPC_URL, DD_SITE } = process.env;
+  const { STARKNET_NETWORK, STARKY_CHUNK_SIZE, STARKNET_RPC_URL, DD_SITE } = process.env;
 
   const cfg = loadConfig();
   
@@ -269,130 +267,77 @@ export const handler = async (argv: any) => {
     console.log("• RPC:", STARKNET_RPC_URL);
     console.log("• Network:", STARKNET_NETWORK);
     console.log("• ABI File:", cfg.abiFile || "abi.json");
-    console.log("• Contracts:", contracts.length ? contracts : "(none → provider permitting, chain-wide)");
     console.log("• Event names from ABI:", eventNames.length);
     console.log("• Known event names:", eventMapper.getKnownEventNames().length);
-    console.log("• Chunk size:", STARKY_CHUNK_SIZE);
     console.log("• Interval (ms):", argv["interval-ms"]);
     console.log("🔎 Logs Explorer:", logsLink);
   }
 
-  // Construir diccionarios de eventos y funciones ANTES del loop
-  console.log("🔧 Building event and function dictionaries...");
+       const eventDict: { [key: string]: string } = {}; // nombre -> selector
+       const eventSelectorDict: { [key: string]: string } = {}; // selector -> nombre
+       const functionDict: { [key: string]: string } = {}; // nombre -> selector
+       const functionSelectorDict: { [key: string]: string } = {}; // selector -> nombre
+
+       if (abiParser) {
+         const events = abiParser.getAllEvents();
+         console.log(`📋 Processing ${events.length} events from ABI...`);
+
+         for (const event of events) {
+           try {
+             const eventNameParts = event.name.split('::');
+             const lastPart = eventNameParts[eventNameParts.length - 1];
+             const cleanEventName = lastPart.replace(/Event$/, '');
+
+             const eventSelector = event.selector;
+
+             eventDict[cleanEventName] = eventSelector;
+             eventSelectorDict[eventSelector] = cleanEventName;
+           } catch (error) {
+             console.warn(`⚠️  Could not generate selector for event: ${event.name}`, error);
+           }
+         }
+
+         // Construir diccionario de funciones
+         const functions = abiParser.getAllFunctions();
+         console.log(`📋 Processing ${functions.length} functions from ABI...`);
+
+         for (const func of functions) {
+           try {
+             // Para funciones, usar getSelectorFromName
+             const functionSelector = hash.getSelectorFromName(func.name);
+
+             functionDict[func.name] = functionSelector;
+             functionSelectorDict[functionSelector] = func.name;
+           } catch (error) {
+             console.warn(`⚠️  Could not generate selector for function: ${func.name}`, error);
+           }
+         }
+       }
   
-  const eventDict: { [key: string]: string } = {}; // nombre -> selector
-  const eventSelectorDict: { [key: string]: string } = {}; // selector -> nombre
-  const functionDict: { [key: string]: string } = {}; // nombre -> selector
-  const functionSelectorDict: { [key: string]: string } = {}; // selector -> nombre
-  
-  if (abiParser) {
-    // Construir diccionario de eventos
-    const events = abiParser.getAllEvents();
-    console.log(`📋 Processing ${events.length} events from ABI...`);
-    
-    for (const event of events) {
-      try {
-        // Extraer nombre limpio del evento (última parte después de :: y quitar "Event")
-        const eventNameParts = event.name.split('::');
-        const lastPart = eventNameParts[eventNameParts.length - 1];
-        const cleanEventName = lastPart.replace(/Event$/, ''); // Quitar "Event" al final
-        
-        // Use the original selector from the event (this handles both global events from manifest and contract events)
-        const eventSelector = event.selector;
-        
-        eventDict[cleanEventName] = eventSelector;
-        eventSelectorDict[eventSelector] = cleanEventName;
-        
-        if (argv.verbose) {
-          console.log(`  📝 Event: ${event.name} -> ${cleanEventName} -> ${eventSelector}`);
-        }
-      } catch (error) {
-        console.warn(`⚠️  Could not generate selector for event: ${event.name}`, error);
-      }
-    }
-    
-    // Construir diccionario de funciones
-    const functions = abiParser.getAllFunctions();
-    console.log(`📋 Processing ${functions.length} functions from ABI...`);
-    
-    for (const func of functions) {
-      try {
-        // Para funciones, usar getSelectorFromName
-        const functionSelector = hash.getSelectorFromName(func.name);
-        
-        functionDict[func.name] = functionSelector;
-        functionSelectorDict[functionSelector] = func.name;
-        
-        if (argv.verbose) {
-          console.log(`  🔧 Function: ${func.name} -> ${functionSelector}`);
-        }
-      } catch (error) {
-        console.warn(`⚠️  Could not generate selector for function: ${func.name}`, error);
-      }
-    }
-  }
-  
-  // Add events from manifest's global events section
-  if (abiParser && abiParser.isLoaded()) {
-    const manifestEvents = abiParser.getManifestEvents();
-    console.log(`🔧 Adding ${manifestEvents.length} events from manifest...`);
-    
-    for (const event of manifestEvents) {
-      try {
-        // Use the tag as the event name and the selector directly
-        const eventName = event.tag;
-        const eventSelector = event.selector.toLowerCase();
-        
-        eventDict[eventName] = eventSelector;
-        eventSelectorDict[eventSelector] = eventName;
-        
-        if (argv.verbose) {
-          console.log(`  📋 Manifest Event: ${eventName} -> ${eventSelector}`);
-        }
-      } catch (error) {
-        console.warn(`  ⚠️ Failed to add manifest event ${event.tag}: ${error}`);
-      }
-    }
-  }
-  
-  // Add common Dojo system events as fallback
-  const dojoSystemEvents = [
-    'StoreSetRecord',
-    'StoreUpdateRecord', 
-    'StoreDelRecord',
-    'Event',
-    'ModelRegistered',
-    'ContractUpgraded',
-    'WorldUpgraded',
-    'NamespaceRegistered',
-    'EventRegistered'
-  ];
-  
-  // Add the unknown selector we found in the blockchain
-  const unknownSelector = '0x1c93f6e4703ae90f75338f29bffbe9c1662200cee981f49afeec26e892debcd';
-  if (!eventSelectorDict[unknownSelector]) {
-    eventDict['UnknownDojoEvent'] = unknownSelector;
-    eventSelectorDict[unknownSelector] = 'UnknownDojoEvent';
-    console.log(`🔧 Added unknown Dojo event: UnknownDojoEvent -> ${unknownSelector}`);
-  }
-  
-  console.log(`🔧 Adding ${dojoSystemEvents.length} Dojo system events as fallback...`);
-  for (const systemEvent of dojoSystemEvents) {
-    try {
-      const selector = hash.getSelectorFromName(systemEvent);
-      // Only add if not already in dictionary
-      if (!eventSelectorDict[selector]) {
-        eventDict[systemEvent] = selector;
-        eventSelectorDict[selector] = systemEvent;
-        
-        if (argv.verbose) {
-          console.log(`  🏛️ System Event: ${systemEvent} -> ${selector}`);
-        }
-      }
-    } catch (error) {
-      console.warn(`⚠️  Could not generate selector for system event: ${systemEvent}`, error);
-    }
-  }
+       // Add events from manifest's global events section (only for Dojo)
+       if (abiParser && abiParser.isLoaded() && abiParser.isDojoABI()) {
+         const manifestEvents = abiParser.getManifestEvents();
+         if (manifestEvents.length > 0) {
+           console.log(`🔧 Adding ${manifestEvents.length} events from manifest...`);
+
+           for (const event of manifestEvents) {
+             try {
+               // Use the tag as the event name and the selector directly
+               const eventName = event.tag;
+               const eventSelector = event.selector.toLowerCase();
+
+               eventDict[eventName] = eventSelector;
+               eventSelectorDict[eventSelector] = eventName;
+
+               if (argv.verbose) {
+                 console.log(`  📋 Manifest Event: ${eventName} -> ${eventSelector}`);
+               }
+             } catch (error) {
+               console.warn(`  ⚠️ Failed to add manifest event ${event.tag}: ${error}`);
+             }
+           }
+         }
+       }
 
   console.log(`✅ Dictionaries built successfully!`);
   console.log(`  📝 Events: ${Object.keys(eventDict).length} entries`);
@@ -442,65 +387,6 @@ export const handler = async (argv: any) => {
     if (argv.verbose) console.log(`⏩ Starting from block #${fromBlock.block_number}`);
   }
 
-  // Test event selector matching
-  console.log("\n🧪 Testing event selector matching:");
-  
-  // Get some recent events to test against
-  try {
-    const currentBlock = await provider.getBlockNumber();
-    const recentEvents = await provider.getEvents({
-      from_block: { block_number: currentBlock },
-      to_block: { block_number: currentBlock },
-      chunk_size: 10
-    } as any);
-    
-    if (recentEvents.events && recentEvents.events.length > 0) {
-      console.log(`\n📋 Found ${recentEvents.events.length} events in block ${currentBlock}:`);
-      
-      recentEvents.events.forEach((event: any, index: number) => {
-        const eventSelector = event.keys?.[0] || "";
-        const eventName = getEventName(eventSelector);
-        const contractAddress = event.from_address?.slice(0, 10) + "...";
-        
-        console.log(`\n${index + 1}. Event from ${contractAddress}:`);
-        console.log(`   Selector: ${eventSelector}`);
-        console.log(`   Matched name: ${eventName || "❌ NO MATCH"}`);
-        
-        if (!eventName) {
-          console.log(`   🔍 Looking for this selector in our dictionary...`);
-          const foundInDict = Object.entries(eventSelectorDict).find(([selector, name]) => 
-            selector.toLowerCase() === eventSelector.toLowerCase()
-          );
-          if (foundInDict) {
-            console.log(`   ✅ Found in dict: ${foundInDict[1]} -> ${foundInDict[0]}`);
-          } else {
-            console.log(`   ❌ Not found in dictionary`);
-            console.log(`   📝 Available selectors in dict: ${Object.keys(eventSelectorDict).slice(0, 5).join(", ")}...`);
-          }
-        }
-      });
-    } else {
-      console.log("❌ No events found in recent block");
-    }
-  } catch (error) {
-    console.log(`⚠️  Error fetching events: ${error}`);
-  }
-
-  // Show dictionary contents for debugging
-  console.log("\n📚 Event Dictionary Contents:");
-  console.log(`Total entries: ${Object.keys(eventSelectorDict).length}`);
-  
-  // Show first 10 entries
-  const entries = Object.entries(eventSelectorDict).slice(0, 10);
-  entries.forEach(([selector, name], index) => {
-    console.log(`   ${index + 1}. ${name} -> ${selector}`);
-  });
-  
-  if (Object.keys(eventSelectorDict).length > 10) {
-    console.log(`   ... and ${Object.keys(eventSelectorDict).length - 10} more`);
-  }
-
-  console.log("\n✅ Parser test completed. Starting main ingest loop...");
 
   //
   while (true) {
@@ -674,7 +560,7 @@ export const handler = async (argv: any) => {
 
             // Usar diccionario para obtener nombre del evento
             const eventSelector = e.keys?.[0] || "";
-            const eventName = getEventName(eventSelector) || `unknown_${eventSelector.slice(0, 8)}`;
+            const eventName = getEventName(eventSelector) || eventSelector;
             
             
             logs.push({

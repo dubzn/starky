@@ -122,7 +122,7 @@ export class ABIParser {
   /**
    * Detectar si es un ABI de Dojo
    */
-  private isDojoABI(): boolean {
+  isDojoABI(): boolean {
     return !!(this.abiData?.world && this.abiData?.contracts);
   }
 
@@ -270,21 +270,51 @@ export class ABIParser {
    */
   private extractEvents(abi: any[]): EventInfo[] {
     const events: EventInfo[] = [];
+    const isDojoABI = this.isDojoABI();
 
     for (const item of abi) {
       if (item.type === "event" && item.name) {
         try {
-          // Para eventos de Dojo, usar el selector pre-calculado si está disponible
-          // Si no, calcular con hash.getSelectorFromName
-          const selector = item.selector 
-            ? item.selector.toLowerCase()
-            : hash.getSelectorFromName(item.name).toLowerCase();
-          
-          events.push({
-            name: item.name,
-            selector: selector,
-            inputs: item.inputs || []
-          });
+          if (isDojoABI) {
+            // Para Dojo: usar el selector pre-calculado si está disponible
+            const selector = item.selector 
+              ? item.selector.toLowerCase()
+              : hash.getSelectorFromName(item.name).toLowerCase();
+            
+            events.push({
+              name: item.name,
+              selector: selector,
+              inputs: item.inputs || []
+            });
+          } else {
+            // Para Scarb: manejar enums de eventos
+            if (item.kind === "enum" && item.variants) {
+              // Extraer solo las variantes del enum, no el enum completo
+              for (const variant of item.variants) {
+                try {
+                  const variantName = variant.name;
+                  const selector = hash.getSelectorFromName(variantName).toLowerCase();
+                  
+                  events.push({
+                    name: variantName,
+                    selector: selector,
+                    inputs: variant.type ? [] : []
+                  });
+                } catch (error) {
+                  console.warn(`⚠️  Failed to get selector for event variant ${variant.name}:`, error);
+                }
+              }
+            } else {
+              // Para eventos que no son enums (structs individuales)
+              const selector = hash.getSelectorFromName(item.name).toLowerCase();
+              
+              events.push({
+                name: item.name,
+                selector: selector,
+                inputs: item.inputs || []
+              });
+            }
+          }
         } catch (error) {
           console.warn(`⚠️  Failed to get selector for event ${item.name}:`, error);
         }
@@ -466,6 +496,7 @@ export class ABIParser {
   isLoaded(): boolean {
     return this.abiData !== null;
   }
+
 
   /**
    * Obtener eventos del manifest (sección global events)
