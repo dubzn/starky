@@ -1,7 +1,8 @@
 {
-  "activeBoardId": "7vs-swq-vc6",
+  "activeBoardId": "97s-vfj-98x",
   "abiFile": "./manifest.json",
   "contracts": [
+    "0x5d151da3085badd054db02d2c0891dcdc6a98538ea0e86edea0e45ea70df72d",
     "0x56d740b5c56d64bd27b2af3e632a2cd5d01e2523aca885bc9a0bb617a269e19",
     "0x5b96b233fe27c4e4e7f09b463f944550315cbac5ede6a4715da0ea35fb407cc",
     "0x66574cc6c4629d84ad75a2580f291670011833fa678df3a9de3be6cdd08549a",
