@@ -3,7 +3,7 @@
   <img width="400" height="400" alt="starkyy" src="https://github.com/user-attachments/assets/a0eb4f69-b193-40aa-bb28-7b7173f32639" />
 </p>
 
-# Starky
+# Starky ([Youtube demo](https://www.youtube.com/watch?v=kLNdJmag8Uo))
 A CLI tool for monitoring Starknet smart contracts and streaming events to Datadog dashboards. Starky automatically parses contract ABIs, extracts events and function calls, and creates real-time dashboards.
 
 ## Features
